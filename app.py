@@ -55,37 +55,42 @@ def get_market_status():
         return "ナイトセッション", [4, 5, 6]
 
 
-# --- 2. ロジック設定（先物リアルタイム修正版） ---
-def get_nikkei_price():
+# --- 2. ロジック設定（先物・現物分離版） ---
+def get_market_prices():
     try:
-        # Tickerを NK=F (CME日経先物) に設定
-        ticker = yf.Ticker("NK=F")
-        # 直近1日のデータを1分足で取得（最も確実な最新値を取るため）
-        data = ticker.history(period="1d", interval="1m")
-        
-        if not data.empty:
-            # 最新の終値
-            current_price = data['Close'].iloc[-1]
-            # 本日の始値（その日最初のデータ）
-            open_price = data['Open'].iloc[0]
-            # 前日比（または本日始値比）の計算
-            change = current_price - open_price
-            return current_price, change
+        # 1. 先物価格 (NK=F) の取得 - 祝日も動く
+        ft_ticker = yf.Ticker("NK=F")
+        ft_data = ft_ticker.history(period="1d", interval="1m")
+        if not ft_data.empty:
+            ft_price = ft_data['Close'].iloc[-1]
+            ft_change = ft_price - ft_data['Open'].iloc[0]
         else:
-            # 万が一先物が取れない場合のバックアップ（現物指数）
-            backup = yf.Ticker("^N225").history(period="1d")
-            if not backup.empty:
-                return backup['Close'].iloc[-1], backup['Close'].iloc[-1] - backup['Open'].iloc[-1]
-            return 0, 0
-    except Exception as e:
-        # エラー時は0を返さず、ログに出力（デバッグ用）
-        print(f"価格取得エラー: {e}")
-        return 0, 0
+            ft_price, ft_change = 0, 0
 
+        # 2. 現物指数 (^N225) の取得 - 祝日は止まる
+        spot_ticker = yf.Ticker("^N225")
+        spot_data = spot_ticker.history(period="1d")
+        if not spot_data.empty:
+            spot_price = spot_data['Close'].iloc[-1]
+            spot_change = spot_price - spot_data['Open'].iloc[0]
+        else:
+            spot_price, spot_change = 0, 0
+            
+        return ft_price, ft_change, spot_price, spot_change
+    except:
+        return 0, 0, 0, 0
 
-# --- サイドバーの表示ラベルも変更 ---
-price, change = get_nikkei_price()
-st.sidebar.metric("日経225先物 (リアルタイム)", f"{price:,.0f}", f"{change:+.0f}")
+# --- サイドバーの表示（デザイン調整） ---
+ft_p, ft_c, sp_p, sp_c = get_market_prices()
+
+st.sidebar.markdown("### 📈 市場価格")
+# 先物（メイン表示）
+st.sidebar.metric("日経225先物 (NK=F)", f"{ft_p:,.0f}", f"{ft_c:+.0f}")
+# 現物（サブ表示 - 祝日は「CLOSE」と表示させる工夫）
+is_holiday = datetime.datetime.now().weekday() >= 5 or ft_p == sp_p # 簡易的な祝日判定
+label_spot = "日経平均現物 (CLOSE)" if is_holiday else "日経平均現物"
+st.sidebar.metric(label_spot, f"{sp_p:,.0f}", f"{sp_c:+.0f}")
+
 
 # --- 3. UIデザイン設定 ---
 st.set_page_config(page_title="225 IChing Pro", layout="centered")
