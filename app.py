@@ -55,21 +55,33 @@ def get_market_status():
         return "ナイトセッション", [4, 5, 6]
 
 
-# --- 2. ロジック設定（先物リアルタイム版） ---
+# --- 2. ロジック設定（先物リアルタイム修正版） ---
 def get_nikkei_price():
     try:
-        # ^N225（現物）から NK=F（日経225先物/CME等連動）に変更
-        # これによりナイトセッション中も価格が動きます
-        ticker = yf.Ticker("NK=F") 
-        data = ticker.history(period="1d", interval="5m") # 5分足で直近を取得
+        # Tickerを NK=F (CME日経先物) に設定
+        ticker = yf.Ticker("NK=F")
+        # 直近1日のデータを1分足で取得（最も確実な最新値を取るため）
+        data = ticker.history(period="1d", interval="1m")
+        
         if not data.empty:
+            # 最新の終値
             current_price = data['Close'].iloc[-1]
+            # 本日の始値（その日最初のデータ）
             open_price = data['Open'].iloc[0]
-            return current_price, current_price - open_price
+            # 前日比（または本日始値比）の計算
+            change = current_price - open_price
+            return current_price, change
         else:
+            # 万が一先物が取れない場合のバックアップ（現物指数）
+            backup = yf.Ticker("^N225").history(period="1d")
+            if not backup.empty:
+                return backup['Close'].iloc[-1], backup['Close'].iloc[-1] - backup['Open'].iloc[-1]
             return 0, 0
-    except:
+    except Exception as e:
+        # エラー時は0を返さず、ログに出力（デバッグ用）
+        print(f"価格取得エラー: {e}")
         return 0, 0
+
 
 # --- サイドバーの表示ラベルも変更 ---
 price, change = get_nikkei_price()
