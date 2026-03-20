@@ -3,23 +3,18 @@ import json
 import datetime
 import random
 import yfinance as yf
+import pytz
 
 # --- 0. セキュリティ設定 ---
-PASSWORD = "nk225"  # ここを好きなパスワードに変更してください
+PASSWORD = "nk225" 
 
 def check_password():
-    """正しいパスワードが入力されたらTrueを返す"""
     if "password_correct" not in st.session_state:
         st.session_state["password_correct"] = False
-
     if st.session_state["password_correct"]:
         return True
-
-    # パスワード入力画面の表示
-    st.title("🔐 認証が必要です")
-    st.write("このツールは限定公開です。アクセスコードを入力してください。")
-    password_input = st.text_input("パスワード", type="password")
-    
+    st.markdown("<h1 style='font-size: 32px; text-align:center;'>🔐 225 IChing Pro</h1>", unsafe_allow_html=True)
+    password_input = st.text_input("パスワードを入力してください", type="password")
     if st.button("ログイン"):
         if password_input == PASSWORD:
             st.session_state["password_correct"] = True
@@ -28,7 +23,6 @@ def check_password():
             st.error("⚠️ パスワードが違います")
     return False
 
-# パスワードチェックを実行（通らなければここで停止）
 if not check_password():
     st.stop()
 
@@ -43,139 +37,121 @@ def load_data():
 
 master_data = load_data()
 
-# --- 2. ロジック設定 ---
-# --- 2. ロジック設定（修正版） ---
-def get_market_status():
-    hour = datetime.datetime.now().hour
-    # 日中：9時〜16時（1-3爻）、ナイト：それ以外（4-6爻）
-    if 9 <= hour < 16:
-        # 名前（文字列）と、対応する爻のリスト（数値）をセットで返す
-        return "日中セッション", [1, 2, 3]
-    else:
-        return "ナイトセッション", [4, 5, 6]
-
-
-# --- 2. ロジック設定（先物・現物分離 堅牢版） ---
-def get_market_prices():
+# --- 2. 市場価格取得（日経平均現物 ^N225 のみ） ---
+@st.cache_data(ttl=30)
+def get_nikkei_price():
     try:
-        # 先物 (NK=F) を1分足で取得。祝日も動く。
-        # 稀に 'NK=F' で取れない場合は 'NIY=F' (CME) を試す
-        ft_ticker = yf.Ticker("NK=F")
-        ft_data = ft_ticker.history(period="1d", interval="1m")
+        ticker = yf.Ticker("^N225")
+        # 最新の気配値(last_price)を取得
+        info = ticker.fast_info
+        price = info['last_price']
+        change = price - info['previous_close']
+        return price, change
+    except:
+        return 0, 0
+
+# --- 3. 市場ステータス判定（8:45-15:45 / 17:00-06:00） ---
+def get_market_status():
+    jst = pytz.timezone('Asia/Tokyo')
+    now = datetime.datetime.now(jst)
+    current_time = now.hour + now.minute / 60.0
+
+    # 日中セッション（08:45 〜 15:45）
+    if 8.75 <= current_time <= 15.75:
+        status = "日中セッション"
+        # 8:45-11:00=1爻, 11:00-13:30=2爻, 13:30-15:45=3爻
+        target_yao = 1 if current_time < 11.0 else (2 if current_time < 13.5 else 3)
+    # 夜間セッション（17:00 〜 翌06:00）
+    elif current_time >= 17.0 or current_time <= 6.0:
+        status = "夜間セッション"
+        # 17:00-21:00=4爻, 21:00-01:00=5爻, 01:00-06:00=6爻
+        if 17.0 <= current_time < 21.0: target_yao = 4
+        elif current_time >= 21.0 or current_time < 1.0: target_yao = 5
+        else: target_yao = 6
+    else:
+        status = "セッション外（待機）"
+        target_yao = 1
         
-        if not ft_data.empty:
-            ft_p = ft_data['Close'].iloc[-1]
-            ft_c = ft_p - ft_data['Open'].iloc[0]
+    return status, target_yao
+
+# --- 4. 先物トレード用語変換（占断用） ---
+def to_futures_term(text):
+    mapping = {"銘柄": "相場", "現物": "先物", "強い株": "強い波動", "買い。": "ロング。", "売り。": "ショート。"}
+    for k, v in mapping.items():
+        text = text.replace(k, v)
+    return text
+
+# --- 5. 卦象ビジュアル（一行HTML・下から積み上げ・変爻赤） ---
+def draw_hexagram_visual(active_yao, is_yang_list):
+    st.write("---")
+    st.markdown("### 📊 卦象ビジュアル（波動）")
+    # 下(1)から上(6)へ描画
+    for i in range(6, 0, -1):
+        is_yang = is_yang_list[i-1]
+        is_active = (i == int(active_yao))
+        color = "#FF4B4B" if is_active else "#333333"
+        
+        if is_yang:
+            bar_html = f'<div style="width:260px; height:28px; background-color:{color}; border-radius:4px;"></div>'
         else:
-            # 代替シンボル（CME日経平均先物）を試行
-            alt_data = yf.Ticker("NIY=F").history(period="1d", interval="1m")
-            if not alt_data.empty:
-                ft_p = alt_data['Close'].iloc[-1]
-                ft_c = ft_p - alt_data['Open'].iloc[0]
-            else:
-                ft_p, ft_c = 0, 0
+            bar_html = f'<div style="display:flex; width:260px; justify-content:space-between;"><div style="width:120px; height:28px; background-color:{color}; border-radius:4px;"></div><div style="width:120px; height:28px; background-color:{color}; border-radius:4px;"></div></div>'
+        
+        row_content = f'<div style="display:flex; justify-content:center; align-items:center; margin:12px 0;">{bar_html}<div style="width:110px; margin-left:20px; font-weight:bold; color:{color}; font-size:18px;">第{i}爻 {"(変爻)" if is_active else ""}</div></div>'
+        st.markdown(row_content, unsafe_allow_html=True)
 
-        # 現物 (^N225) は祝日のため昨日の値で固定
-        spot_data = yf.Ticker("^N225").history(period="1d")
-        if not spot_data.empty:
-            sp_p = spot_data['Close'].iloc[-1]
-            sp_c = sp_p - spot_data['Open'].iloc[0]
-        else:
-            sp_p, sp_c = 0, 0
-            
-        return ft_p, ft_c, sp_p, sp_c
-    except Exception as e:
-        print(f"Error: {e}")
-        return 0, 0, 0, 0
-
-# --- サイドバーの表示（デザイン調整） ---
-ft_p, ft_c, sp_p, sp_c = get_market_prices()
-
-st.sidebar.markdown("### 📈 市場価格")
-# 先物（メイン表示）
-st.sidebar.metric("日経225先物 (NK=F)", f"{ft_p:,.0f}", f"{ft_c:+.0f}")
-# 現物（サブ表示 - 祝日は「CLOSE」と表示させる工夫）
-is_holiday = datetime.datetime.now().weekday() >= 5 or ft_p == sp_p # 簡易的な祝日判定
-label_spot = "日経平均現物 (CLOSE)" if is_holiday else "日経平均現物"
-st.sidebar.metric(label_spot, f"{sp_p:,.0f}", f"{sp_c:+.0f}")
-
-
-# --- 3. UIデザイン設定 ---
+# --- 6. メインUI ---
 st.set_page_config(page_title="225 IChing Pro", layout="centered")
 
-st.markdown("""
-    <style>
-    /* タイトル（h1）のサイズを調整 */
-    h1 { font-size: 32px !important; margin-bottom: 10px; }
+# 価格・ステータス取得
+price, change = get_nikkei_price()
+m_phase, auto_yao = get_market_status()
 
-    .stButton>button {
-        width: 100%; height: 100px; font-size: 32px !important;
-        font-weight: bold !important; background-color: #ff4b4b !important;
-        color: white !important; border-radius: 15px;
-    }
-    .stMarkdown p { font-size: 22px !important; line-height: 1.6; }
-    .stAlert p { font-size: 24px !important; }
-    h2 { font-size: 48px !important; }
-    h3 { font-size: 36px !important; }
-    </style>
-    """, unsafe_allow_html=True)
+# タイトル（32px）
+st.markdown("<h1 style='font-size: 32px; text-align:center;'>🏯 日経225研究会：易占トレード Pro</h1>", unsafe_allow_html=True)
 
+# サイドバー（重複なし）
+st.sidebar.markdown("### 📈 日経平均株価")
+if price > 0:
+    st.sidebar.metric("日経平均 (Live)", f"{price:,.0f} 円", f"{change:+.0f} 円")
+else:
+    st.sidebar.warning("価格データ取得中...")
 
-# --- 修正後の表示ロジック ---
-# 113行目：関数から4つの値をしっかり受け取る
-ft_p, ft_c, sp_p, sp_c = get_market_prices()
+st.sidebar.divider()
+st.sidebar.write(f"現在の状況：**{m_phase}**")
+st.sidebar.info(f"自動判定の注目爻：**第{auto_yao}爻**")
 
-# 114行目以降：新しい変数名を使って表示する
-st.sidebar.markdown("### 📈 市場価格")
+# 立卦ボタン
+st.markdown("""<style>.stButton>button { width: 100%; height: 80px; font-size: 26px !important; font-weight: bold !important; background-color: #ff4b4b !important; color: white !important; border-radius: 12px; }</style>""", unsafe_allow_html=True)
 
-# 先物を上に表示
-st.sidebar.metric("日経225先物 (NK=F)", f"{ft_p:,.0f}", f"{ft_c:+.0f}")
-
-# 現物を下に表示（祝日判定付き）
-is_holiday = datetime.datetime.now().weekday() >= 5 or ft_p == sp_p
-label_spot = "日経平均現物 (CLOSE)" if is_holiday else "日経平均現物"
-st.sidebar.metric(label_spot, f"{sp_p:,.0f}", f"{sp_c:+.0f}")
-
-st.title("🏯 日経225先物研究会：易占トレード Pro")
-
-# --- 4. 演算ボタン（巨大） ---
 if st.button("天の時を演算（立卦）"):
-    if not master_data: st.stop()
-    
-    gua_name = random.choice(list(master_data.keys()))
-    yao_num = str(random.choice(target_yaos))
-    gua_info = master_data[gua_name]
-    yao_info = gua_info["yao"][yao_num]
-    score = (gua_info["base_score"] + yao_info["score"]) // 2
-
-    st.divider()
-    
-    # 1. ヘッダーエリア
-    st.markdown(f"### 【本卦】 {gua_name}")
-    color = "#1C83E1" if score < 0 else "#FF4B4B"
-    st.markdown(f"<h2 style='color:{color}; text-align:center;'>期待値指数：{score}</h2>", unsafe_allow_html=True)
-    
-    # 2. ブロック・レイアウト
-    col1, col2 = st.columns(2)
-    with col1:
-        st.info(f"**【基本性質】**\n\n{gua_info['base_property']}")
-    with col2:
-        st.warning(f"**【本日のアクション】**\n\n{yao_info['action']}")
+    if not master_data:
+        st.error("JSONデータが読み込めていません。")
+    else:
+        # ランダム立卦
+        gua_name = random.choice(list(master_data.keys()))
+        yao_num = str(auto_yao)
+        gua_info = master_data[gua_name]
+        yao_info = gua_info["yao"][yao_num]
+        score = (gua_info["base_score"] + yao_info["score"]) // 2
         
-    # 3. 秘伝テキスト
-    st.success(f"**【{yao_num}爻の秘伝テキスト】**\n\n{yao_info}")
+        # 陽陰生成（ビジュアル用）
+        is_yang_list = [random.choice([True, False]) for _ in range(6)]
 
-    # 4. 卦のビジュアル
-    st.write("---")
-    st.write("▼ 卦象（現在の波動）")
-    visual_bars = []
-    for i in range(1, 7):
-        is_yang = random.choice([True, False]) 
-        bar_design = "━━━━━━━━━━━━" if is_yang else "━━━━━　　━━━━━"
-        if str(i) == yao_num:
-            visual_bars.append(f"<span style='color:#ff4b4b; font-size:36px; font-weight:bold;'>▶ {bar_design} （第{i}爻）</span>")
-        else:
-            visual_bars.append(f"<span style='color:#ccc; font-size:30px;'>　 {bar_design}</span>")
-    
-    st.markdown(f"<div style='text-align:center; line-height:1.4;'>{'<br>'.join(reversed(visual_bars))}</div>", unsafe_allow_html=True)
-    st.markdown(f"<p style='text-align:right; font-size:18px;'>（全体勢力：{gua_info['base_score']}）</p>", unsafe_allow_html=True)
+        st.divider()
+        st.markdown(f"### 【本卦】 {gua_name}")
+        color_score = "#1C83E1" if score < 0 else "#FF4B4B"
+        st.markdown(f"<h2 style='color:{color_score}; text-align:center; font-size:48px;'>期待値指数：{score}</h2>", unsafe_allow_html=True)
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            st.info(f"**【波動性質】**\n\n{to_futures_term(gua_info['base_property'])}")
+        with col2:
+            st.warning(f"**【戦略アクション】**\n\n{to_futures_term(yao_info['action'])}")
+            
+        st.success(f"**【第{yao_num}爻の秘伝テキスト】**\n\n{to_futures_term(yao_info.get('text', '詳細はマスターファイル参照'))}")
+
+        # 下から積み上げビジュアル
+        draw_hexagram_visual(yao_num, is_yang_list)
+
+st.divider()
+st.caption(f"最終更新：{datetime.datetime.now(pytz.timezone('Asia/Tokyo')).strftime('%Y-%m-%d %H:%M:%S')}")
