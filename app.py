@@ -110,7 +110,7 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # サイドバー情報
-price, change = get_nikkei_price()
+ft_p, ft_c, sp_p, sp_c = get_market_prices()
 st.sidebar.metric("日経平均 (参考現物)", f"{price:,.0f}", f"{change:+.0f}")
 market_phase, target_yaos = get_market_status()
 st.sidebar.write(f"現在：{market_phase}")
