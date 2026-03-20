@@ -120,8 +120,64 @@ st.sidebar.divider()
 st.sidebar.write(f"現在の状況：**{m_phase}**")
 st.sidebar.info(f"自動判定の注目爻：**第{auto_yao}爻**")
 
-# 立卦ボタン
-st.markdown("""<style>.stButton>button { width: 100%; height: 80px; font-size: 26px !important; font-weight: bold !important; background-color: #ff4b4b !important; color: white !important; border-radius: 12px; }</style>""", unsafe_allow_html=True)
+# --- 6. 立卦アクション ---
+
+# 1. 心得のボックスとデザイン（ここを追加）
+st.markdown("""
+    <style>
+    .kokoro-box {
+        background-color: #f8f9fa;
+        padding: 20px;
+        border-radius: 10px;
+        border-left: 5px solid #ff4b4b;
+        margin-bottom: 20px;
+        box-shadow: 2px 2px 5px rgba(0,0,0,0.05);
+    }
+    .kokoro-title {
+        font-size: 18px;
+        font-weight: bold;
+        color: #333;
+        margin-bottom: 12px;
+        border-bottom: 1px solid #ddd;
+        padding-bottom: 5px;
+    }
+    .kokoro-item {
+        font-size: 15px;
+        margin-bottom: 10px;
+        line-height: 1.5;
+    }
+    .kokoro-bold {
+        color: #ff4b4b;
+        font-weight: bold;
+    }
+    </style>
+    <div class="kokoro-box">
+        <div class="kokoro-title">🔮 立卦の心得</div>
+        <div class="kokoro-item">
+            <span class="kokoro-bold">● 誠（まこと）の心で臨む</span><br>
+            単なる好奇心や遊び半分、疑いの心で占ってはいけません。真剣に答えを求める姿勢が必要です。
+        </div>
+        <div class="kokoro-item">
+            <span class="kokoro-bold">● 無心・謙虚さ</span><br>
+            結果を恐れず、期待せず、ただ誠心誠意の心で臨むことが大切です。
+        </div>
+        <div class="kokoro-item">
+            <span class="kokoro-bold">● 依存せず、決意を持って</span><br>
+            易は行動を指し示すヒントです。自分で主体的に決断する姿勢が求められます。
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+# 2. ボタンのデザイン設定（既存のものを上書き・整理）
+st.markdown("""
+    <style>
+    .stButton>button {
+        width: 100%; height: 80px; font-size: 26px !important;
+        font-weight: bold !important; background-color: #ff4b4b !important;
+        color: white !important; border-radius: 12px;
+    }
+    </style>
+    """, unsafe_allow_html=True)
 
 if st.button("天の時を演算（立卦）"):
     if not master_data:
