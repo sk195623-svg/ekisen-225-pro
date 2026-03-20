@@ -55,12 +55,25 @@ def get_market_status():
         return "ナイトセッション", [4, 5, 6]
 
 
+# --- 2. ロジック設定（先物リアルタイム版） ---
 def get_nikkei_price():
     try:
-        ticker = yf.Ticker("^N225")
-        data = ticker.history(period="1d")
-        return data['Close'].iloc[-1], data['Close'].iloc[-1] - data['Open'].iloc[-1]
-    except: return 0, 0
+        # ^N225（現物）から NK=F（日経225先物/CME等連動）に変更
+        # これによりナイトセッション中も価格が動きます
+        ticker = yf.Ticker("NK=F") 
+        data = ticker.history(period="1d", interval="5m") # 5分足で直近を取得
+        if not data.empty:
+            current_price = data['Close'].iloc[-1]
+            open_price = data['Open'].iloc[0]
+            return current_price, current_price - open_price
+        else:
+            return 0, 0
+    except:
+        return 0, 0
+
+# --- サイドバーの表示ラベルも変更 ---
+price, change = get_nikkei_price()
+st.sidebar.metric("日経225先物 (リアルタイム)", f"{price:,.0f}", f"{change:+.0f}")
 
 # --- 3. UIデザイン設定 ---
 st.set_page_config(page_title="225 IChing Pro", layout="centered")
