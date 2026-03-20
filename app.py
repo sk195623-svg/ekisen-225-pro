@@ -5,7 +5,7 @@ import random
 import yfinance as yf
 
 # --- 0. セキュリティ設定 ---
-PASSWORD = "admin777"  # ここを好きなパスワードに変更してください
+PASSWORD = "nk225"  # ここを好きなパスワードに変更してください
 
 def check_password():
     """正しいパスワードが入力されたらTrueを返す"""
@@ -89,7 +89,7 @@ if st.sidebar.button("ログアウト"):
     st.session_state["password_correct"] = False
     st.rerun()
 
-st.title("🏯 日経225先物：易占トレードエンジン Pro")
+st.title("🏯 日経225先物研究会：易占トレード Pro")
 
 # --- 4. 演算ボタン（巨大） ---
 if st.button("天の時を演算（立卦）"):
