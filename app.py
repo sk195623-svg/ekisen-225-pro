@@ -97,6 +97,9 @@ st.set_page_config(page_title="225 IChing Pro", layout="centered")
 
 st.markdown("""
     <style>
+    /* タイトル（h1）のサイズを調整 */
+    h1 { font-size: 32px !important; margin-bottom: 10px; }
+
     .stButton>button {
         width: 100%; height: 100px; font-size: 32px !important;
         font-weight: bold !important; background-color: #ff4b4b !important;
@@ -109,15 +112,21 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# サイドバー情報
-ft_p, ft_c, sp_p, sp_c = get_market_prices()
-st.sidebar.metric("日経平均 (参考現物)", f"{price:,.0f}", f"{change:+.0f}")
-market_phase, target_yaos = get_market_status()
-st.sidebar.write(f"現在：{market_phase}")
 
-if st.sidebar.button("ログアウト"):
-    st.session_state["password_correct"] = False
-    st.rerun()
+# --- 修正後の表示ロジック ---
+# 113行目：関数から4つの値をしっかり受け取る
+ft_p, ft_c, sp_p, sp_c = get_market_prices()
+
+# 114行目以降：新しい変数名を使って表示する
+st.sidebar.markdown("### 📈 市場価格")
+
+# 先物を上に表示
+st.sidebar.metric("日経225先物 (NK=F)", f"{ft_p:,.0f}", f"{ft_c:+.0f}")
+
+# 現物を下に表示（祝日判定付き）
+is_holiday = datetime.datetime.now().weekday() >= 5 or ft_p == sp_p
+label_spot = "日経平均現物 (CLOSE)" if is_holiday else "日経平均現物"
+st.sidebar.metric(label_spot, f"{sp_p:,.0f}", f"{sp_c:+.0f}")
 
 st.title("🏯 日経225先物研究会：易占トレード Pro")
 
