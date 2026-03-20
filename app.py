@@ -55,29 +55,37 @@ def get_market_status():
         return "ナイトセッション", [4, 5, 6]
 
 
-# --- 2. ロジック設定（先物・現物分離版） ---
+# --- 2. ロジック設定（先物・現物分離 堅牢版） ---
 def get_market_prices():
     try:
-        # 1. 先物価格 (NK=F) の取得 - 祝日も動く
+        # 先物 (NK=F) を1分足で取得。祝日も動く。
+        # 稀に 'NK=F' で取れない場合は 'NIY=F' (CME) を試す
         ft_ticker = yf.Ticker("NK=F")
         ft_data = ft_ticker.history(period="1d", interval="1m")
+        
         if not ft_data.empty:
-            ft_price = ft_data['Close'].iloc[-1]
-            ft_change = ft_price - ft_data['Open'].iloc[0]
+            ft_p = ft_data['Close'].iloc[-1]
+            ft_c = ft_p - ft_data['Open'].iloc[0]
         else:
-            ft_price, ft_change = 0, 0
+            # 代替シンボル（CME日経平均先物）を試行
+            alt_data = yf.Ticker("NIY=F").history(period="1d", interval="1m")
+            if not alt_data.empty:
+                ft_p = alt_data['Close'].iloc[-1]
+                ft_c = ft_p - alt_data['Open'].iloc[0]
+            else:
+                ft_p, ft_c = 0, 0
 
-        # 2. 現物指数 (^N225) の取得 - 祝日は止まる
-        spot_ticker = yf.Ticker("^N225")
-        spot_data = spot_ticker.history(period="1d")
+        # 現物 (^N225) は祝日のため昨日の値で固定
+        spot_data = yf.Ticker("^N225").history(period="1d")
         if not spot_data.empty:
-            spot_price = spot_data['Close'].iloc[-1]
-            spot_change = spot_price - spot_data['Open'].iloc[0]
+            sp_p = spot_data['Close'].iloc[-1]
+            sp_c = sp_p - spot_data['Open'].iloc[0]
         else:
-            spot_price, spot_change = 0, 0
+            sp_p, sp_c = 0, 0
             
-        return ft_price, ft_change, spot_price, spot_change
-    except:
+        return ft_p, ft_c, sp_p, sp_c
+    except Exception as e:
+        print(f"Error: {e}")
         return 0, 0, 0, 0
 
 # --- サイドバーの表示（デザイン調整） ---
