@@ -107,7 +107,7 @@ price, change = get_nikkei_price()
 m_phase, auto_yao = get_market_status()
 
 # タイトル（32px）
-st.markdown("<h1 style='font-size: 32px; text-align:center;'>🏯 日経225研究会：易占トレード Pro</h1>", unsafe_allow_html=True)
+st.markdown("<h1 style='font-size: 32px; text-align:center;'>🏯 日経先物：相場易</h1>", unsafe_allow_html=True)
 
 # サイドバー（重複なし）
 st.sidebar.markdown("### 📈 日経平均株価")
