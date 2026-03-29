@@ -1,20 +1,28 @@
 import streamlit as st
-import json
 import datetime
 import random
-import yfinance as yf
-import pytz
 
 # --- 0. セキュリティ設定 ---
-PASSWORD = "nk225" 
-
 def check_password():
+    PASSWORD = "nk225"
     if "password_correct" not in st.session_state:
         st.session_state["password_correct"] = False
     if st.session_state["password_correct"]:
         return True
-    st.markdown("<h1 style='font-size: 32px; text-align:center;'>🔐 225 IChing Pro</h1>", unsafe_allow_html=True)
+
+    # --- パスワード画面の表示 ---
+    st.markdown("### 🔐 225 IChing Pro ログイン")
+    
+    # ここに注意書きを追加（お好きな文面に書き換えてください）
+    st.warning("""
+    **【利用上の注意】**
+    *   このアプリは相場の傾向を占うものであり、投資成果を保証するものではありません。
+    *   実際の取引はご自身の判断と責任において行ってください。
+    *   パスワードを忘れた場合は、管理者までお問い合わせください。
+    """)
+    
     password_input = st.text_input("パスワードを入力してください", type="password")
+    
     if st.button("ログイン"):
         if password_input == PASSWORD:
             st.session_state["password_correct"] = True
@@ -26,188 +34,350 @@ def check_password():
 if not check_password():
     st.stop()
 
-# --- 1. データ読み込み ---
-def load_data():
-    try:
-        with open('iching_master.json', 'r', encoding='utf-8') as f:
-            return json.load(f)
-    except:
-        st.error("iching_master.json が見つかりません。")
-        return {}
 
-master_data = load_data()
-
-# --- 2. 市場価格取得（日経平均現物 ^N225 のみ） ---
-@st.cache_data(ttl=30)
-def get_nikkei_price():
-    try:
-        ticker = yf.Ticker("^N225")
-        # 最新の気配値(last_price)を取得
-        info = ticker.fast_info
-        price = info['last_price']
-        change = price - info['previous_close']
-        return price, change
-    except:
-        return 0, 0
-
-# --- 3. 市場ステータス判定（8:45-15:45 / 17:00-06:00） ---
-def get_market_status():
-    jst = pytz.timezone('Asia/Tokyo')
-    now = datetime.datetime.now(jst)
-    current_time = now.hour + now.minute / 60.0
-
-    # 日中セッション（08:45 〜 15:45）
-    if 8.75 <= current_time <= 15.75:
-        status = "日中セッション"
-        # 8:45-11:00=1爻, 11:00-13:30=2爻, 13:30-15:45=3爻
-        target_yao = 1 if current_time < 11.0 else (2 if current_time < 13.5 else 3)
-    # 夜間セッション（17:00 〜 翌06:00）
-    elif current_time >= 17.0 or current_time <= 6.0:
-        status = "夜間セッション"
-        # 17:00-21:00=4爻, 21:00-01:00=5爻, 01:00-06:00=6爻
-        if 17.0 <= current_time < 21.0: target_yao = 4
-        elif current_time >= 21.0 or current_time < 1.0: target_yao = 5
-        else: target_yao = 6
-    else:
-        status = "セッション外（待機）"
-        target_yao = 1
-        
-    return status, target_yao
-
-# --- 4. 先物トレード用語変換（占断用） ---
-def to_futures_term(text):
-    mapping = {"銘柄": "相場", "現物": "先物", "強い株": "強い波動", "買い。": "ロング。", "売り。": "ショート。"}
-    for k, v in mapping.items():
-        text = text.replace(k, v)
-    return text
-
-# --- 5. 卦象ビジュアル（一行HTML・下から積み上げ・変爻赤） ---
-def draw_hexagram_visual(active_yao, is_yang_list):
-    st.write("---")
-    st.markdown("### 📊 卦象ビジュアル（波動）")
-    # 下(1)から上(6)へ描画
-    for i in range(6, 0, -1):
-        is_yang = is_yang_list[i-1]
-        is_active = (i == int(active_yao))
-        color = "#FF4B4B" if is_active else "#333333"
-        
-        if is_yang:
-            bar_html = f'<div style="width:260px; height:28px; background-color:{color}; border-radius:4px;"></div>'
-        else:
-            bar_html = f'<div style="display:flex; width:260px; justify-content:space-between;"><div style="width:120px; height:28px; background-color:{color}; border-radius:4px;"></div><div style="width:120px; height:28px; background-color:{color}; border-radius:4px;"></div></div>'
-        
-        row_content = f'<div style="display:flex; justify-content:center; align-items:center; margin:12px 0;">{bar_html}<div style="width:110px; margin-left:20px; font-weight:bold; color:{color}; font-size:18px;">第{i}爻 {"(変爻)" if is_active else ""}</div></div>'
-        st.markdown(row_content, unsafe_allow_html=True)
-
-# --- 6. メインUI ---
-st.set_page_config(page_title="225 IChing Pro", layout="centered")
-
-# 価格・ステータス取得
-price, change = get_nikkei_price()
-m_phase, auto_yao = get_market_status()
-
-# タイトル（32px）
-st.markdown("<h1 style='font-size: 32px; text-align:center;'>🏯 日経先物：相場易</h1>", unsafe_allow_html=True)
-
-# サイドバー（重複なし）
-st.sidebar.markdown("### 📈 日経平均株価")
-if price > 0:
-    st.sidebar.metric("日経平均 (Live)", f"{price:,.0f} 円", f"{change:+.0f} 円")
-else:
-    st.sidebar.warning("価格データ取得中...")
-
-st.sidebar.divider()
-st.sidebar.write(f"現在の状況：**{m_phase}**")
-st.sidebar.info(f"自動判定の注目爻：**第{auto_yao}爻**")
-
-# --- 6. 立卦アクション ---
-
-# 1. 心得のボックスとデザイン（ここを追加）
+# --- 1. スタイル設定（文字サイズ・ボタン装飾） ---
 st.markdown("""
     <style>
-    .kokoro-box {
-        background-color: #f8f9fa;
-        padding: 20px;
-        border-radius: 10px;
-        border-left: 5px solid #ff4b4b;
+    /* 解説テキストのサイズアップ */
+    .report-text {
+        font-size: 19px !important;
+        line-height: 1.7;
         margin-bottom: 20px;
-        box-shadow: 2px 2px 5px rgba(0,0,0,0.05);
     }
-    .kokoro-title {
-        font-size: 18px;
-        font-weight: bold;
-        color: #333;
-        margin-bottom: 12px;
-        border-bottom: 1px solid #ddd;
-        padding-bottom: 5px;
+    /* 戦略ボックスの装飾 */
+    .strategy-box {
+        background-color: #fffaf0;
+        padding: 22px;
+        border-left: 6px solid #d4af37; /* ゴールド */
+        border-radius: 8px;
+        font-size: 20px !important;
+        box-shadow: 2px 2px 10px rgba(0,0,0,0.05);
     }
-    .kokoro-item {
-        font-size: 15px;
-        margin-bottom: 10px;
-        line-height: 1.5;
-    }
-    .kokoro-bold {
-        color: #ff4b4b;
+    .highlight-blue {
+        color: #1c83e1;
         font-weight: bold;
     }
-    </style>
-    <div class="kokoro-box">
-        <div class="kokoro-title">🔮 立卦の心得</div>
-        <div class="kokoro-item">
-            <span class="kokoro-bold">● 誠（まこと）の心で臨む</span><br>
-            単なる好奇心や遊び半分、疑いの心で占ってはいけません。真剣に答えを求める姿勢が必要です。
-        </div>
-        <div class="kokoro-item">
-            <span class="kokoro-bold">● 無心・謙虚さ</span><br>
-            結果を恐れず、期待せず、ただ誠心誠意の心で臨むことが大切です。
-        </div>
-        <div class="kokoro-item">
-            <span class="kokoro-bold">● 依存せず、決意を持って</span><br>
-            易は行動を指し示すヒントです。自分で主体的に決断する姿勢が求められます。
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-# 2. ボタンのデザイン設定（既存のものを上書き・整理）
-st.markdown("""
-    <style>
-    .stButton>button {
-        width: 100%; height: 80px; font-size: 26px !important;
-        font-weight: bold !important; background-color: #ff4b4b !important;
-        color: white !important; border-radius: 12px;
+    /* 立卦ボタンのカスタマイズ */
+    div.stButton > button {
+        background: linear-gradient(to right, #d4af37, #f1c40f); /* 金運ゴールドグラデーション */
+        color: #fff !important;
+        font-size: 24px !important;
+        font-weight: bold !important;
+        height: 70px !important;
+        width: 100% !important;
+        border-radius: 50px !important;
+        border: none !important;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.2) !important;
+        transition: 0.3s !important;
+    }
+    div.stButton > button:hover {
+        background: linear-gradient(to right, #f1c40f, #d4af37) !important;
+        transform: translateY(-2px) !important;
+        box-shadow: 0 6px 20px rgba(0,0,0,0.3) !important;
     }
     </style>
     """, unsafe_allow_html=True)
 
-if st.button("天の時を演算（立卦）"):
-    if not master_data:
-        st.error("JSONデータが読み込めていません。")
-    else:
-        # ランダム立卦
-        gua_name = random.choice(list(master_data.keys()))
-        yao_num = str(auto_yao)
-        gua_info = master_data[gua_name]
-        yao_info = gua_info["yao"][yao_num]
-        score = (gua_info["base_score"] + yao_info["score"]) // 2
-        
-        # 陽陰生成（ビジュアル用）
-        is_yang_list = [random.choice([True, False]) for _ in range(6)]
+# --- 2. 鑑定データベース（例：主要な卦を抜粋） ---
+# 運用時はこれを拡張して64卦にします
+GUA_DATABASE = {
+    "沢風大過": {
+        "base_desc": "「重荷に耐えかねる」「バランスの崩壊」を意味します。高値圏での限界や、材料出尽くしによる急落の前兆となることが多い卦です。",
+        "yao_desc": {
+            "5": "「枯木生華（枯れ木に花が咲く）」。一時的な急騰や最後の吹き上がりを指しますが、易経では『長くはもたない』と戒めています。"
+        },
+        "strategy_hint": "深追いは厳禁。上がったところは絶好の『戻り売り』ポイントになりやすい局面です。"
+    },
+    "乾為天": {
+        "base_desc": "「剛健」「純陽」。極めて強い上昇エネルギーを宿していますが、頂点に達しているため、反落の危険も孕んでいます。",
+        "yao_desc": {
+            "6": "「亢龍有悔（こうりょうくいあり）」。昇りつめた龍が後悔する象。これ以上の買いは危険であり、天井圏を示唆します。"
+        },
+        "strategy_hint": "全力買いは避け、利益を確実に確保するフェーズです。逆張りの売りも検討すべき時期。"
+    },
+    "火天大有": {
+        "base_desc": "「盛大」「公明正大」。相場は活気づき、多くの投資家が強気になっている絶好調の象。利益が乗りやすい時期。",
+        "yao_desc": {
+            "3": "「公（こう）天子に亨（きょう）す」。プロや大口の動きに乗ることで、大きな利益を得られる好機です。",
+            "6": "「天よりこれを助く」。予想以上の伸び。利益を伸ばせるだけ伸ばす強気のスタンスが有効。"
+        },
+        "strategy_hint": "順張り（ロング）継続。ただし、過熱感が出始めたら利確の準備を怠らないこと。"
+    },
+    "地火明夷": {
+        "base_desc": "「日没」「暗黒」。才能や勢いが隠される象。悪材料の噴出や、不可解な急落に見舞われやすい極めて警戒すべき局面です。",
+        "yao_desc": {
+            "1": "「明夷に于（ゆ）いて飛ぶ」。難を逃れて去る象。わずかな違和感を感じたら、即座に全決済して撤退すべきです。",
+            "6": "「初めには天に登り、後には地に入る」。天国から地獄への転落。高値を掴んだ投資家の投げ売りが加速します。"
+        },
+        "strategy_hint": "「君子危うきに近寄らず」。ノーポジション（キャッシュ化）が最善の戦略。売り目線が基本です。"
+    },
+    "雷地予": {
+        "base_desc": "「愉悦」「準備」。期待感で相場が浮き足立っている状態。実体以上に「期待買い」で上昇しやすい局面。",
+        "yao_desc": {
+            "1": "「予（よ）に鳴（めい）ず」。慢心による失敗。根拠のない自信での買い増しは、手痛いしっぺ返しを食らいます。",
+            "4": "「予（よ）よりす。大いにお得ることあり」。相場の中心人物（大口）の登場。ここから一段高が期待できるポイント。"
+        },
+        "strategy_hint": "お祭り騒ぎに乗りつつも、出口戦略を常に意識。熱狂のピークで売り抜ける準備を。"
+    },
+    "風沢中孚": {
+        "base_desc": "「誠実」「信頼」。市場のコンセンサス（合意）が取れている状態。トレンドが安定しており、騙しが少ない安定相場。",
+        "yao_desc": {
+            "2": "「鳴く鶴、陰にあり」。共鳴。良い材料が広く伝わり、追随買いが入りやすい好循環の兆し。",
+            "6": "「翰音（かんおん）天に登る」。空虚な声が響く象。実体のない噂だけで上げているため、間もなく崩壊します。"
+        },
+        "strategy_hint": "テクニカル通りに動きやすい時期。トレンドラインを割り込むまでは強気維持でOK。"
+    },
+    "天山遯": {
+        "base_desc": "「隠遁」「撤退」。勢いが衰え、賢明な投資家はすでに逃げ始めている象。逆らわずに身を引くことが求められます。",
+        "yao_desc": {
+            "2": "「これを執（と）うるに黄牛の革（かわ）を用う」。強固な意志。含み損に執着せず、心を鬼にして損切りすべき時。",
+            "6": "「肥遯（ひとう）」。悠々と逃げる。未練を残さず、利益があるうちに市場から去ることで資産が守られます。"
+        },
+        "strategy_hint": "「逃げるが勝ち」。新規買いは厳禁。ショート（売り）か、全決済による静観を推奨。"
+    },
+    "沢地萃": {
+        "base_desc": "「集結」「隆盛」。資金や注文が一箇所に集まる象。テーマ株の暴騰や、指数の一致した上昇が見込まれる強い卦。",
+        "yao_desc": {
+            "4": "「大吉にして咎（とが）なし」。大きなチャンスの到来。多少のリスクを取っても攻める価値のある局面です。",
+            "6": "「齎咨（せいし）涕洟（ていい）す」。嘆き悲しむ象。ピークアウト後の急落。祝宴の終わりに取り残されないように。"
+        },
+        "strategy_hint": "資金の流入先を見極め、一点集中で利益を狙える時。ただし、引き際も鮮やかに。"
+    },
+    "雷火豊": {
+        "base_desc": "「豊大」「日中」。エネルギーの絶頂。相場は最高に盛り上がっていますが、これ以上は「欠ける（下がる）」のみの運気。",
+        "yao_desc": {
+            "3": "「その右肱（うこう）を折る」。右腕を失う象。頼みの綱の好材料が効かなくなり、暗雲が立ち込めます。",
+            "6": "「その屋（おく）を豊かにし…三歳（さんせい）見えず」。孤独と衰退。強欲の結果、高値で取り残され長期塩漬けになる恐れ。"
+        },
+        "strategy_hint": "「絶頂期は衰退の始まり」。新規買いは控え、少しずつ利益を確定させてポジションを軽くすべきです。"
+    },
+    "地山謙": {
+        "base_desc": "「謙虚」「隠れた徳」。目立たないが底堅い相場。派手な上昇はないが、着実に下値を切り上げていく安定感があります。",
+        "yao_desc": {
+            "3": "「労（ろう）ありて謙（けん）なり」。実力が伴った上昇。地道な買いが報われ、最終的に大きな実を結びます。",
+            "6": "「鳴（めい）謙（けん）」。評判が広がる。ようやく注目が集まり、本格的なトレンドが発生する前兆。"
+        },
+        "strategy_hint": "地味な銘柄や、放置されていた優良株に光が当たる時。じっくりと構える投資が吉。"
+    },
+    "水地比": {
+        "base_desc": "「親和」「協力」。多くの投資家が同じ方向を向き、足並みが揃う象。安定した買い安心感のある地合い。",
+        "yao_desc": {
+            "1": "「これに比するに孚（ふ）あり」。信頼関係。トレンドの初動で信じて乗ることが大きな利益に繋がります。",
+            "6": "「これに比するに首（こうべ）なし」。リーダー不在。買い手が消え、支えを失った相場が崩落するサイン。"
+        },
+        "strategy_hint": "周囲の動向と一致しているうちは安心。ただし、買い板が薄くなってきたら即逃げの準備を。"
+    },
+    "山雷頤": {
+        "base_desc": "「養う」「口実」。エネルギーを蓄えている時期、または特定の「言葉（ニュース・噂）」で相場が上下する象。",
+        "yao_desc": {
+            "1": "「霊亀（れいき）を舎（お）きて、我が観（あご）を見る」。自分の宝を忘れ、他人の利益を羨む。軸のブレた売買で自滅する恐れ。",
+            "6": "「頤（おとがい）に由（よ）る。危うきも吉」。全責任を負って進む。ハイリスクだが、勝負に出ることで大きな道が開けます。"
+        },
+        "strategy_hint": "「情報は慎重に吟味」。噂に踊らされず、自分の投資基準（養うべきもの）を再確認する時期。"
+    },
+    "沢水困": {
+        "base_desc": "「行き詰まり」「枯渇」。資金繰りの悪化や、買い手が完全不在の状態。どんな好材料も無視される、極めて苦しい停滞局面です。",
+        "yao_desc": {
+            "1": "「臀（しり）を株木（しゅぼく）に困（くる）しむ」。身動きが取れず、深い谷底に沈む象。底値はまだ先で、さらなる下落を覚悟すべき時。",
+            "6": "「葛藟（かつるい）に困（くる）しむ」。がんじがらめの状態だが、ようやく出口が見える兆し。苦悶の末の投げが出尽くした後に好転します。"
+        },
+        "strategy_hint": "「休むも相場」。含み損の放置は厳禁。一度全てを清算して、再出発の機会を待つ勇気が必要です。"
+    },
+    "地雷復": {
+        "base_desc": "「一陽来復」「反転」。どん底から一筋の光が差し込む象。長らく続いた下落トレンドが終わり、自律反発が始まるサイン。",
+        "yao_desc": {
+            "1": "「遠からずして復（かえ）る」。初期微動。ミスを最小限に抑え、トレンド転換の初動に静かに乗るのが最善です。",
+            "6": "「迷いて復（かえ）る。凶なり」。反転のチャンスを逃し、再び闇に落ちる象。タイミングを逸した買いは致命傷になります。"
+        },
+        "strategy_hint": "「底打ち確認」。慎重に、かつ確実な打診買いを開始するフェーズ。トレンドの「戻り」を確信してから攻めるのが吉。"
+    },
+    "天火同人": {
+        "base_desc": "「協力」「共通の目的」。投資家が一つのテーマに殺到する象。集団心理による力強い押し上げが期待できる、明るい相場。",
+        "yao_desc": {
+            "2": "「宗に同人す。吝（りん）なり」。身内（狭い範囲）だけの盛り上がり。市場全体への波及効果は薄く、伸び悩みます。",
+            "5": "「同人、先には号咷（ごうとう）して、後には笑う」。激しい乱高下を経て、最終的には大きな勝利を掴むドラマチックな展開。"
+        },
+        "strategy_hint": "「テーマ株・人気株への便乗」。周囲の熱量を測り、市場のメインストリームに乗ることで収穫が得られます。"
+    },
+    "山天大畜": {
+        "base_desc": "「大いなる蓄積」「エネルギーの充填」。爆発的な上昇を前に、力が凝縮されている状態。レンジを抜ければ大相場になる予感。",
+        "yao_desc": {
+            "3": "「良馬、逐（お）う」。準備万端。障害が取り除かれ、一気に加速する象。全力での追随が大きな利益を生みます。",
+            "6": "「天の衢（みち）にあり。何ぞ通ぜざらん」。天下晴れての独歩高。どこまで上がるか分からないほどの強い上昇。"
+        },
+        "strategy_hint": "「ブレイクアウト待ち」。レンジの上限を抜けた瞬間に勝負をかける。蓄えられたエネルギーは相当なものです。"
+    },
+    "火水未済": {
+        "base_desc": "「未完成」「再出発の予感」。物事が決着せず、混沌としているが、可能性を秘めている象。古いサイクルが終わり、新しい局面へ。",
+        "yao_desc": {
+            "1": "「その尾を濡らす。吝なり」。勇み足。準備不足のまま飛び込むと、初動で手痛いミスを犯します。",
+            "6": "「酒を飲むに孚（まこと）あり。その首を濡らす」。過信。成功に酔いしれて警戒を怠ると、一転して奈落に落ちる戒め。"
+        },
+        "strategy_hint": "「慎重な見極め」。まだ完全な上昇トレンドではありません。一つ一つのハードルを確認しながら進む時期。"
+    },
+    "雷天大壮": {
+        "base_desc": "「猛進」「強力な勢い」。勢いに任せて突き進む大相場。ただし、勢い余って「突き抜けて自滅」するリスクも孕む。",
+        "yao_desc": {
+            "3": "「小人は壮（さか）んを用い、君子は罔（あみ）を用いる」。力任せの売買は危険。冷静に戦略を立てた者だけが生き残ります。",
+            "6": "「羝羊（ていよう）藩（まがき）に触る」。進むも退くもできなくなる象。高値での買いポジションが捕まり、身動きが取れなくなります。"
+        },
+        "strategy_hint": "「ブレーキのない暴走に注意」。勢いはあるが、常に逆指値（ストップロス）を置いて身を守ること。"
+    },
+    "火地晋": {
+        "base_desc": "「進展」「日の出」。障害が消え、視界が開ける象。順調な価格上昇が続き、周囲もそれを祝福するような好地合い。",
+        "yao_desc": {
+            "1": "「進如（しんじょ）摧如（さいじょ）」。進もうとして阻まれる。出だしは鈍いが、信念を持って保持すれば報われます。",
+            "4": "「晋（すす）むに鼫鼠（せきそ）のごとし。危うし」。姑息な売買。目先の小銭を追いすぎると、大きな流れを見失い危険です。"
+        },
+        "strategy_hint": "「順張り徹底」。素直なチャート形成になりやすい時期。不必要な裏読みはせず、流れに乗るのが一番。"
+    },
+    "風火家人": {
+        "base_desc": "「内固め」「秩序」。外側の派手な動きよりも、企業の内情やファンダメンタルズが重視される相場。地味だが堅実。",
+        "yao_desc": {
+            "2": "「遂（と）ぐる所なし、中饋（ちゅうき）に在り」。目立った活躍はないが、現状維持が最大の防衛。安定銘柄が買われます。",
+            "5": "「王、家に仮（いた）る。悔いなし」。中心人物による統治。信頼できるリーダー（好材料）により、相場が引き締まる象。"
+        },
+        "strategy_hint": "「内需・安定株に注目」。外部環境の乱れに強く、底堅い銘柄でポートフォリオを固めるのが吉。"
+    },
+    "沢天夬": {
+        "base_desc": "「決断」「決壊」。溜まっていた問題が一気に噴出する象。堤防が切れるように、価格が大きく一方向に動き出す危険な転換点。",
+        "yao_desc": {
+            "1": "「前趾（ぜんし）に進む。勝たざるを知る」。無謀な突撃。勝機のない戦いに資金を投じ、早期に消耗する恐れ。",
+            "6": "「号（さけ）ぶことあり、終に凶なり」。最後の断末魔。買いを叫んでも誰も助けに来ない。相場の完全な崩壊を暗示します。"
+        },
+        "strategy_hint": "「決死の覚悟で損切り」。不穏な空気を感じたら、理由を問わずポジションを解消して現金化を急ぐべき局面。"
+    },
+    "風地観": {
+        "base_desc": "「観察」「静観」。上から全体を見渡す象。自分は動かず、市場がどの方向に進むのかを冷静に見極めるべき時期。",
+        "yao_desc": {
+            "4": "「国の光を観る。王に賓（ひん）するに利あり」。有望なセクターの発見。将来の主役となる銘柄を冷静に見抜く好機。",
+            "6": "「その生を観る。君子、咎（とが）なし」。自己反省と悟り。これまでのトレードを振り返り、手法を修正することで将来が拓けます。"
+        },
+        "strategy_hint": "「チャートを俯瞰する」。細かな値動き（1分足など）に惑わされず、週足や月足で大きなトレンドを確認すべき時。"
+    },
+    # --- 続きの全データ ---
+    "風雷益": {
+        "base_desc": "「増益」「躍進」。上からの恩恵を受け、利益が加速度的に増える象。絶好の買い場であり、強気一辺倒で報われる局面。",
+        "yao_desc": {
+            "1": "「利用して大作（たいさく）をなす」。大きな勝負に出て吉。自信を持ってポジションを積み増すべき時。",
+            "6": "「これに益（えき）するなく、或いはこれを撃つ」。強欲の報い。利益を独占しようとして市場から手痛い反撃を食らいます。"
+        },
+        "strategy_hint": "「攻めの姿勢」。多少の高値掴みを恐れず、勢いに乗ることで最大の果実が得られます。"
+    },
+    "山沢損": {
+        "base_desc": "「減資」「奉仕」。利益が削られ、一時的な後退を余儀なくされる象。今は「損して得取れ」の精神で、将来のための整理が必要な時。",
+        "yao_desc": {
+            "1": "「事を已（や）めて速やかに往く」。即断即決。損失が小さいうちに撤退し、次のチャンスに資金を残すべきです。",
+            "3": "「三人行けば一人の損を得る」。選択と集中。分散投資よりも、最も確実な一つに絞り込むことで難を逃れます。"
+        },
+        "strategy_hint": "「守りの固め」。損失を最小限に抑えることが、次の上昇局面での爆発力に繋がります。"
+    },
+    "天雷無妄": {
+        "base_desc": "「無欲」「予期せぬ出来事」。自分の予想を超えた力が働く象。作為的な売買は裏目に出やすく、流れに身を任せるべき時。",
+        "yao_desc": {
+            "1": "「無妄に行（ゆ）く。吉なり」。邪念のない素直なトレード。チャートの指示通りに動けば意外な収穫があります。",
+            "6": "「無妄に行（ゆ）けば災（わざわ）いあり」。行き過ぎた動き。これ以上の深追いは、天災のような急落を招く恐れ。"
+        },
+        "strategy_hint": "「自然体」。過度な期待や恐怖を捨て、市場のありのままの姿（価格）に従うのが賢明です。"
+    },
+    "山雷頤": {
+        "base_desc": "「養う」「言葉の重み」。エネルギーを蓄積中。または特定のニュースや噂（口から出るもの）で相場が大きく振れる象。",
+        "yao_desc": {
+            "1": "「霊亀を舎（お）きて我が観を見る」。他人の利益を羨み、自分のルールを破る。自滅のパターンに注意。",
+            "6": "「頤（おとがい）に由（よ）る。危うきも吉」。全責任を負う覚悟。大勝負に出るタイミング。リスクはあるが道は拓けます。"
+        },
+        "strategy_hint": "「情報の取捨選択」。噂に踊らされず、自分の投資スタンスをじっくり「養う」時期です。"
+    },
+    "風水渙": {
+        "base_desc": "「分散」「霧消」。不透明感が解消される象。悪い流れが散り、ようやく新しい風が吹き始める転換点。",
+        "yao_desc": {
+            "1": "「用（もち）うるに拯（すく）う。馬の壮んなるに利あり」。強力な助っ人の登場。大口の買い支えにより、最悪期を脱します。",
+            "6": "「その血を去り、遠く出す」。厄払い。含み損の損切りを終え、心が軽くなる象。ここから新しい相場が始まります。"
+        },
+        "strategy_hint": "「仕切り直し」。滞っていたポジションを解消し、フレッシュな視点で次のトレンドに乗る準備を。"
+    },
+    "水山蹇": {
+        "base_desc": "「難局」「足止め」。目の前に大きな壁があり、進むに進めない象。無理に突破しようとすると、さらなる窮地に陥ります。",
+        "yao_desc": {
+            "1": "「往けば蹇（なや）み、来れば誉（ほまれ）あり」。進めば損失、引けば称賛。勇気ある撤退が、結果的に資産を守ります。",
+            "6": "「往けば蹇（なや）み、来れば碩（おおい）なり」。踏みとどまることで大きな助けを得る象。最悪の局面での粘りが功を奏します。"
+        },
+        "strategy_hint": "「静観と忍耐」。今は無理に利益を追う時ではありません。足元の安全を最優先に確認すべきです。"
+    },
+    "雷水解": {
+        "base_desc": "「解消」「夜明け」。凍りついた相場が溶け出す象。悩み（停滞）が消え、一気に動き出す解放のタイミング。",
+        "yao_desc": {
+            "2": "「田に三つの狐を得る」。懸案事項の解決。悪材料がすべて出尽くし、ここから健全な上昇が始まります。",
+            "6": "「公、隼（はやぶさ）を撃つ」。元凶を断つ。相場を重くしていた要因が完全に消滅し、青天井の展開が期待できます。"
+        },
+        "strategy_hint": "「スピード重視」。チャンスが来たら躊躇なく乗ること。滞っていたエネルギーが一気に解放されます。"
+    },
+    "火沢睽": {
+        "base_desc": "「背信」「不一致」。売り買いの思惑がバラバラで、支離滅裂な動きになりやすい。指標と価格が逆行するような「ちぐはぐ」な相場。",
+        "yao_desc": {
+            "1": "「馬を亡くす。追うなかれ」。小さな損に固執しない。失った利益を追いかけると、さらに大きな罠にハマります。",
+            "6": "「雨降れば則ち吉なり」。疑心暗鬼の終わり。ようやく意見が一致し、混乱していた相場に一定の方向性が出始めます。"
+        },
+        "strategy_hint": "「深入り禁止」。矛盾した動きにイライラせず、分かりやすいトレンドが出るまで距離を置くのが吉。"
+    },
+    "天水訟": {
+        "base_desc": "「争い」「訴訟」。投資家同士の激しい対立。上げようとする勢力と下げようとする勢力が激突し、決着がつかない消耗戦。",
+        "yao_desc": {
+            "1": "「事を長くせず」。争いを長引かせない。損切りか利確かを早く決め、不毛な揉み合いから脱出すべきです。",
+            "6": "「或いはこれに鞶帯（ばんたい）を賜（たま）わん」。一時的な勝利。利益を得ても、すぐに奪い返される象。慢心は禁物です。"
+        },
+        "strategy_hint": "「短期決戦」。勝ち逃げが基本。長居すると相場の争いに巻き込まれ、精神的にも疲弊します。"
+    },
+    "水天需": {
+        "base_desc": "「待機」「期待」。チャンスをじっと待つ象。準備は整っているが、天の時（タイミング）がまだ来ていない状態。",
+        "yao_desc": {
+            "1": "「郊（こう）に需（ま）つ」。まだ遠い。焦ってエントリーしても、成果が出るまでには相当な時間を要します。",
+            "6": "「穴に入る。招かざるの客三人来る」。不測の事態。絶望的な状況に見えても、意外な助け（買い）が入って救われます。"
+        },
+        "strategy_hint": "「果報は寝て待て」。焦りは最大の敵。確実なシグナルが出るまで、ゆったりとした心持ちで待つのが正解。"
+    }
 
-        st.divider()
-        st.markdown(f"### 【本卦】 {gua_name}")
-        color_score = "#1C83E1" if score < 0 else "#FF4B4B"
-        st.markdown(f"<h2 style='color:{color_score}; text-align:center; font-size:48px;'>期待値指数：{score}</h2>", unsafe_allow_html=True)
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            st.info(f"**【波動性質】**\n\n{to_futures_term(gua_info['base_property'])}")
-        with col2:
-            st.warning(f"**【戦略アクション】**\n\n{to_futures_term(yao_info['action'])}")
-            
-        st.success(f"**【第{yao_num}爻の秘伝テキスト】**\n\n{to_futures_term(yao_info.get('text', '詳細はマスターファイル参照'))}")
 
-        # 下から積み上げビジュアル
-        draw_hexagram_visual(yao_num, is_yang_list)
 
-st.divider()
-st.caption(f"最終更新：{datetime.datetime.now(pytz.timezone('Asia/Tokyo')).strftime('%Y-%m-%d %H:%M:%S')}")
+}
+
+# --- 3. 断易ロジック関数 ---
+def get_day_info():
+    zodiacs = ["子", "丑", "寅", "卯", "辰", "巳", "午", "未", "申", "酉", "戌", "亥"]
+    today = datetime.datetime.now()
+    today_idx = (today.day + today.month * 2) % 12 
+    return zodiacs[today_idx]
+
+# --- 4. メイン画面表示 ---
+st.markdown("<h1 style='text-align:center; color:#333;'>🔮 断易・相場精密鑑定</h1>", unsafe_allow_html=True)
+st.write("---")
+
+day_zodiac = get_day_info()
+st.sidebar.markdown(f"### 📅 本日の日辰：<span class='highlight-blue'>{day_zodiac}</span>", unsafe_allow_html=True)
+
+# ボタンのクリック
+if st.button("天の時を演算（精密立卦）"):
+    target_gua_name = random.choice(list(GUA_DATABASE.keys()))
+    target_yao = str(random.randint(1, 6))
+    db = GUA_DATABASE[target_gua_name]
+    
+    # KeyError対策
+    yao_text = db.get("yao_desc", {}).get(target_yao, "この爻の変爻は、本卦のエネルギーが次の段階へ移行する準備期間を示しています。本卦が示す大きな地合い（トレンド）を優先して判断してください。")
+    
+    # 鑑定結果出力
+    st.markdown(f"## 【本日の相場鑑定：{target_gua_name} 第{target_yao}爻変】")
+
+    st.markdown("### 1. 卦の基本構造と相場の勢い")
+    st.markdown(f"""<div class="report-text"><strong>{target_gua_name}（本卦）</strong>: {db['base_desc']}<br><br><strong>第{target_yao}爻の変爻</strong>: {yao_text}</div>""", unsafe_allow_html=True)
+
+    st.divider()
+
+    st.markdown(f"### 2. {day_zodiac}日における断易解析")
+    st.markdown(f"""<div class="report-text">本日の<strong>日辰（{day_zodiac}）</strong>のエネルギーは、現在の勢いに対して強い影響力を持ち始めています。実体を伴わないリバウンドや一時的な押し目が生じやすく、<strong>『日辰の五行』</strong>による勢力変化を注視すべき局面です。</div>""", unsafe_allow_html=True)
+
+    st.divider()
+
+    st.markdown("### 3. 具体的な相場戦略のアドバイス")
+    st.markdown(f"""<div class="strategy-box"><strong>【戦略アドバイス】</strong><br>{db['strategy_hint']}<br><br>● <strong>利益確定</strong>：欲張らずに手仕舞うのが賢明です。<br>● <strong>空売りの検討</strong>：吹き上がりを確認した後の戻り売りは有効な戦略となります。</div>""", unsafe_allow_html=True)
+
+    st.caption(f"※鑑定時刻：{datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}")
