@@ -25,8 +25,8 @@ def check_password():
 感謝: 卦が出たら、感謝を込めて一礼する。
 
 断易は「占った瞬間」のエネルギーが卦に封じ込められます。礼儀と瞑想は、その瞬間を最も誠実でクリアな状態にするための「儀式」です。
-    *   実際の取引はご自身の判断と責任において行ってください。
-    *   パスワードを忘れた場合は、管理者までお問い合わせください。
+    
+実際の取引はご自身の判断と責任において行ってください。
     """)
     
     password_input = st.text_input("パスワードを入力してください", type="password")
@@ -357,7 +357,7 @@ def get_day_info():
     return zodiacs[today_idx]
 
 # --- 4. メイン画面表示 ---
-st.markdown("<h1 style='text-align:center; color:#333;'>🔮 断易・相場精密鑑定</h1>", unsafe_allow_html=True)
+st.markdown("<h1 style='text-align:center; color:#333;'>🔮 断易・日経先物鑑定</h1>", unsafe_allow_html=True)
 st.write("---")
 
 day_zodiac = get_day_info()
