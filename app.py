@@ -11,14 +11,41 @@ st.set_page_config(page_title="225 IChing Pro", page_icon="🔮")
 
 
 # --- 0. ログイン ---
+def _find_password(secrets):
+    """Secrets から password を探す（大文字小文字・[見出し] の中も見る）"""
+    for key, value in secrets.items():
+        if str(key).lower() == "password" and isinstance(value, str) and value.strip():
+            return value.strip()
+        if hasattr(value, "items"):
+            found = _find_password(value)
+            if found:
+                return found
+    return None
+
+
+def _is_local():
+    try:
+        host = st.context.headers.get("Host", "")
+    except Exception:
+        host = ""
+    return host.startswith(("localhost", "127.0.0.1"))
+
+
 def check_password():
     try:  # パスワードは Streamlit の Secrets（password = "..."）に置く。プログラムには書かない
-        password = st.secrets.get("password")
+        password = _find_password(st.secrets)
     except Exception:
         password = None
     password = password or os.environ.get("EKISEN_PASSWORD")
-    if not password or st.session_state.get("password_correct"):
+    if st.session_state.get("password_correct"):
         return True
+    if not password:
+        if _is_local():  # 自分のパソコンで動かすときだけ、パスワード無しで開く
+            return True
+        st.markdown("### 🔐 225 IChing Pro ログイン")
+        st.error("パスワードが設定されていません。Streamlit Cloud の Settings → Secrets に "
+                 '`password = "…"` を書いて保存してください。')
+        return False
     st.markdown("### 🔐 225 IChing Pro ログイン")
     st.warning("""
 **【利用上の注意】**
