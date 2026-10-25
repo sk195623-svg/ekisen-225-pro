@@ -177,7 +177,7 @@ def build_reading(values, moment):
 
 # ---------------- 旺衰と判断 ----------------
 
-def strength(branch, cal, moving=False, changed=None, others=()):
+def strength(branch, cal, moving=False, changed=None, others=(), lines=None):
     """旺衰の要因を (点数, 説明) の一覧で返す"""
     el, mon, day = ELEMENT[branch], cal["month"][1], cal["day"][1]
     mel, dele = ELEMENT[mon], ELEMENT[day]
@@ -247,11 +247,47 @@ def strength(branch, cal, moving=False, changed=None, others=()):
     # 他の動爻
     for o in others:
         oel = ELEMENT[o["branch"]]
+        name = f"{o['pos']}爻 {o['relative']} {o['branch']}{oel}"
         if GEN[oel] == el:
-            f.append((1, f"{o['pos']}爻 {o['relative']} {o['branch']}{oel} が動いて生じる"))
+            f.append((1, f"{name} が動いて生じる"))
         elif CTRL[oel] == el:
-            f.append((-1, f"{o['pos']}爻 {o['relative']} {o['branch']}{oel} が動いて剋す"))
+            relay = _relay(o, el, cal, lines)
+            if relay:  # 貪生忘剋: 忌神が原神を生じることに忙しく、用神を剋すのを忘れる
+                f.append((1, f"{name} は剋す側だが、{relay}を生じて用神へつなぐ連続相生（貪生忘剋）"))
+                continue
+            weak = _weakened(o, cal)
+            if weak:
+                f.append((0, f"{name} が動いて剋すが、{weak}で剋す力が弱い"))
+            else:
+                f.append((-1, f"{name} が動いて剋す"))
     return f
+
+
+def _weakened(o, cal):
+    """動いた爻が空亡・化退神・回頭剋で弱っていれば、その理由を返す"""
+    reasons = []
+    if o["branch"] in cal["void"]:
+        reasons.append("空亡")
+    c = o.get("changed")
+    if c:
+        if RETREAT.get(o["branch"]) == c["branch"]:
+            reasons.append("化退")
+        if CTRL[ELEMENT[c["branch"]]] == ELEMENT[o["branch"]]:
+            reasons.append("回頭の剋")
+    return "・".join(reasons)
+
+
+def _relay(o, el, cal, lines):
+    """忌神 o が生じる原神（用神を生じる五行）が、動いているか旺じていれば、その爻の名前を返す"""
+    if not lines:
+        return None
+    oel = ELEMENT[o["branch"]]
+    for ln in lines:
+        if ln["pos"] == o["pos"] or GEN[oel] != ln["element"] or GEN[ln["element"]] != el:
+            continue
+        if ln["moving"] or ln["branch"] == cal["day"][1] or sum(s for s, _ in strength(ln["branch"], cal)) > 0:
+            return f"{ln['pos']}爻 {ln['relative']} {ln['branch']}{ln['element']}（原神）"
+    return None
 
 
 def judge(reading, use="妻財"):
@@ -285,7 +321,7 @@ def judge(reading, use="妻財"):
                 return {"source": f"{use}が見つかりません", "factors": [], "score": 0, "verdict": "判断できません", "notes": []}
     others = [ln for ln in movers if ln["pos"] != target["pos"]]
     factors = strength(target["branch"], cal, target["moving"],
-                       target["changed"]["branch"] if target.get("changed") else None, others)
+                       target["changed"]["branch"] if target.get("changed") else None, others, lines)
     if source.startswith(f"{target['pos']}爻の下の伏神"):
         fly = lines[target["pos"] - 1]
         if GEN[fly["element"]] == target["element"]:
@@ -305,20 +341,24 @@ def judge(reading, use="妻財"):
     else:
         verdict = "下落基調"
     texts = " ".join(t for _, t in factors)
-    if "化退神" in texts:
+    if "に化して化退神" in texts:
         notes.append("化退神：勢いは時間とともに引いていく（後半は鈍りやすい）")
-    if "化進神" in texts:
+    if "に化して化進神" in texts:
         notes.append("化進神：後半に勢いが増しやすい")
-    if "回頭剋" in texts:
+    if "に化して回頭剋" in texts:
         notes.append("回頭剋：動いても途中で崩れやすい")
+    if "連続相生" in texts:
+        notes.append("連続相生：向かい風の忌神が原神を生じ、原神が用神を生じる流れ（かえって追い風）")
     shi = next(ln for ln in lines if ln["role"] == "世")
     if use == "妻財" and shi["relative"] == "兄弟":
         notes.append("兄弟持世：財が逃げやすい（上値が重い・利が乗りにくい）")
     for ln in movers:
         if use == "妻財" and ln["relative"] == "子孫":
             notes.append(f"原神の子孫（{ln['pos']}爻）が発動：財を生じる追い風")
-        if use == "妻財" and ln["relative"] == "兄弟":
-            notes.append(f"忌神の兄弟（{ln['pos']}爻）が発動：財を剋す向かい風")
+        if use == "妻財" and ln["relative"] == "兄弟" and "連続相生" not in texts:
+            weak = _weakened(ln, cal)
+            notes.append(f"忌神の兄弟（{ln['pos']}爻）が発動：財を剋す向かい風"
+                         + (f"（ただし{weak}で力は弱い）" if weak else ""))
         if ln["relative"] == "父母":
             notes.append(f"父母（{ln['pos']}爻）が発動：ニュース・発表がきっかけになりやすい")
     return {"source": source, "factors": factors, "score": score, "verdict": verdict, "notes": notes,
